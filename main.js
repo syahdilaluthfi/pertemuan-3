@@ -23,6 +23,15 @@ function log(msg) {
   lines.length = Math.min(lines.length, 5);
   logBox.textContent = lines.join(' | ');
 }
+
+// Fungsi Log ke layar dan console
+function log(msg) {
+  console.log(msg);
+  lines.unshift(msg);
+  lines.length = Math.min(lines.length, 5);
+  logBox.textContent = lines.join(' | ');
+}
+
 // Inisialisasi Scene, Objek, dan Renderer
 function init() {
   scene = new THREE.Scene();
