@@ -12,6 +12,10 @@ const pointer = new THREE.Vector2();
 const logBox = document.getElementById('log');
 const lines = [];
 
+// Variabel tambahan untuk pengayaan Drop Zone
+let dropZone;
+let isInsideDropZone = false;
+
 // Fungsi Log ke layar dan console
 function log(msg) {
   console.log(msg);
