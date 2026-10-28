@@ -24,14 +24,6 @@ function log(msg) {
   logBox.textContent = lines.join(' | ');
 }
 
-// Fungsi Log ke layar dan console
-function log(msg) {
-  console.log(msg);
-  lines.unshift(msg);
-  lines.length = Math.min(lines.length, 5);
-  logBox.textContent = lines.join(' | ');
-}
-
 // Inisialisasi Scene, Objek, dan Renderer
 function init() {
   scene = new THREE.Scene();
@@ -53,10 +45,28 @@ function init() {
   scene.add(floor);
   scene.add(new THREE.GridHelper(10, 20, 0x555a6e, 0x3a3f52));
 
-  // Menambahkan tiga objek interaktif (Box, Sphere, Cone)
+  // PENGAYAAN 1: Tambah Drop Zone di lantai (kotak transparan area target)
+  const dropZoneGeo = new THREE.PlaneGeometry(1.5, 1.5);
+  const dropZoneMat = new THREE.MeshStandardMaterial({ 
+    color: 0x555555, 
+    transparent: true, 
+    opacity: 0.4,
+    side: THREE.DoubleSide 
+  });
+  dropZone = new THREE.Mesh(dropZoneGeo, dropZoneMat);
+  dropZone.rotation.x = -Math.PI / 2;
+  dropZone.position.set(0, 0.01, -1.5); // Ditempatkan sedikit di depan
+  scene.add(dropZone);
+
+  // PENGAYAAN 4: Tambah 3 objek baru (Total 6 objek interaktif)
+  // Objek bawaan modul (3 buah)
   addObject(new THREE.BoxGeometry(0.3, 0.3, 0.3), 0xe74c3c, -0.6, 1.2, -1);
   addObject(new THREE.SphereGeometry(0.18, 32, 16), 0x3498db, 0, 1.2, -1);
   addObject(new THREE.ConeGeometry(0.16, 0.35, 32), 0x2ecc71, 0.6, 1.2, -1);
+  // Objek tambahan (3 buah dengan geometri berbeda)
+  addObject(new THREE.CylinderGeometry(0.15, 0.15, 0.4, 32), 0xf1c40f, -0.6, 1.2, -1.5);
+  addObject(new THREE.TorusGeometry(0.12, 0.04, 16, 32), 0x9b59b6, 0, 1.2, -1.5);
+  addObject(new THREE.DodecahedronGeometry(0.18), 0xe67e22, 0.6, 1.2, -1.5);
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
@@ -78,9 +88,16 @@ function init() {
   renderer.setAnimationLoop(render);
 }
 
+// Fungsi helper untuk menyimpan posisi & rotasi awal (untuk fitur Reset Scene)
 function addObject(geometry, color, x, y, z) {
   const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color }));
   mesh.position.set(x, y, z);
+  
+  // Simpan data posisi, rotasi, dan skala awal untuk fitur Reset Scene
+  mesh.userData.initialPosition = new THREE.Vector3(x, y, z);
+  mesh.userData.initialRotation = new THREE.Euler(0, 0, 0);
+  mesh.userData.initialScale = new THREE.Vector3(1, 1, 1);
+
   scene.add(mesh);
   interactables.push(mesh);
 }
@@ -160,7 +177,7 @@ function onSelectStart(event) {
   }
 }
 
-// Handler Trigger Dilepas (RELEASE)
+// Handler Trigger Dilepas (RELEASE) + Pengecekan DROP ZONE
 function onSelectEnd(event) {
   const controller = event.target;
   const obj = controller.userData.selected;
@@ -169,6 +186,18 @@ function onSelectEnd(event) {
     scene.attach(obj); // Mengembalikan objek ke scene
     controller.userData.selected = undefined;
     log('RELEASE: ' + obj.geometry.type);
+
+    // PENGAYAAN 1: Cek apakah objek dilepas di atas area Drop Zone
+    const objPos = new THREE.Vector3();
+    obj.getWorldPosition(objPos);
+    
+    // Batas koordinat area drop zone di lantai (posisi x: -0.75 s.d 0.75, z: -2.25 s.d -0.75)
+    if (Math.abs(objPos.x) <= 0.75 && objPos.z >= -2.25 && objPos.z <= -0.75) {
+      dropZone.material.color.setHex(0x2ecc71); // Ubah warna jadi hijau
+      log('DROP ZONE: Objek berhasil dimasukkan ke area!');
+    } else {
+      dropZone.material.color.setHex(0x555555); // Kembali abu-abu jika di luar
+    }
   }
 }
 
@@ -184,24 +213,41 @@ function onSqueezeStart(event) {
   }
 }
 
-// Frame Animation Loop (Hover, Scale via Thumbstick, & Render)
+// Frame Animation Loop (Hover, Scale & Rotasi via Thumbstick, Reset Scene, & Render)
 function render() {
   // Reset sorotan emissive semua objek
   interactables.forEach((o) => o.material.emissive.setHex(0x000000));
 
   controllers.forEach((c) => {
     const held = c.userData.selected;
+    const gp = c.userData.gamepad;
+
+    // PENGAYAAN 3: Reset Scene menggunakan tombol pada controller (misal tombol index 4 / tombol tambahan)
+    if (gp && gp.buttons && gp.buttons[4] && gp.buttons[4].pressed) {
+      interactables.forEach((o) => {
+        o.position.copy(o.userData.initialPosition);
+        o.rotation.copy(o.userData.initialRotation);
+        o.scale.copy(o.userData.initialScale);
+      });
+      dropZone.material.color.setHex(0x555555);
+      log('RESET SCENE: Semua objek dikembalikan ke posisi awal');
+    }
 
     if (held) {
       // Sorot objek yang sedang digenggam
       held.material.emissive.setHex(0x222222);
 
-      // Skala objek menggunakan Thumbstick (Sumbu Y)
-      const gp = c.userData.gamepad;
       if (gp && gp.axes.length >= 4) {
-        const y = gp.axes[3]; // Sumbu Y thumbstick
-        if (Math.abs(y) > 0.15) { // Abaikan drift kecil
+        // Kontrol Skala menggunakan Thumbstick Sumbu Y (axes[3])
+        const y = gp.axes[3];
+        if (Math.abs(y) > 0.15) { 
           held.scale.multiplyScalar(1 - y * 0.02).clampScalar(0.3, 3);
+        }
+
+        // PENGAYAAN 2: Rotasi Objek menggunakan Thumbstick Sumbu X (axes[2])
+        const x = gp.axes[2];
+        if (Math.abs(x) > 0.15) {
+          held.rotation.y += x * 0.05;
         }
       }
     } else if (c.children.length > 0) {
@@ -240,3 +286,4 @@ function onPointerDown(e) {
 
 // Jalankan aplikasi
 init();
+
